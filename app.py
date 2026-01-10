@@ -4,12 +4,14 @@ Flask app for LinkedIn Bot with scheduled workflow execution
 from flask import Flask, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from works.llm.workflow.orchestrator import run_workflow
 from works.news_current_affairs import get_trending_topics
 import os
 from dotenv import load_dotenv
 import threading
 import traceback
+import requests
 from datetime import datetime
 
 load_dotenv()
@@ -18,6 +20,7 @@ app = Flask(__name__)
 scheduler = BackgroundScheduler()
 workflow_running = False
 workflow_lock = threading.Lock()
+app_port = None
 
 def execute_workflow():
     """Execute the LinkedIn workflow"""
@@ -78,8 +81,31 @@ def start():
         "timestamp": datetime.now().isoformat()
     }), 200
 
+def ping_health_endpoint():
+    """Ping health endpoint to keep server awake"""
+    global app_port
+    try:
+        port = app_port or int(os.getenv('PORT', 5000))
+        url = f"http://localhost:{port}/health"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            print(f"[{datetime.now()}] 💓 Health ping successful")
+        else:
+            print(f"[{datetime.now()}] ⚠️ Health ping returned status {response.status_code}")
+    except Exception as e:
+        print(f"[{datetime.now()}] ⚠️ Health ping failed: {str(e)}")
+
+def health_check():
+    """Health check endpoint"""
+    request = requests.get("https://linkedin-agent-humanoid.onrender.com/health")
+    if request.status_code == 200:
+        return "Healthy"
+    else:
+        return "Unhealthy"
 def start_scheduler():
     """Start the background scheduler"""
+    global app_port
+    
     # Schedule workflow to run 4 times a day (every 6 hours)
     # Times: 00:00, 06:00, 12:00, 18:00
     scheduler.add_job(
@@ -90,17 +116,36 @@ def start_scheduler():
         replace_existing=True
     )
     
+    # Schedule health ping every minute to keep server awake
+    scheduler.add_job(
+        func=ping_health_endpoint,
+        trigger=IntervalTrigger(minutes=1),
+        id='health_ping',
+        name='Health Endpoint Ping',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        func=health_check,
+        trigger=IntervalTrigger(minutes=1),
+        id='health_check',
+        name='Health Check',
+        replace_existing=True
+    )
     scheduler.start()
-    print("✅ Scheduler started - Workflow will run 4 times daily at 00:00, 06:00, 12:00, 18:00")
+    print("✅ Scheduler started:")
+    print("   - Workflow will run 4 times daily at 00:00, 06:00, 12:00, 18:00")
+    print("   - Health endpoint ping every minute to keep server awake")
 
 if __name__ == '__main__':
+    # Get port and store globally for health ping
+    app_port = int(os.getenv('PORT', 5000))
+    
     # Start scheduler
     start_scheduler()
     
     # Run Flask app
-    port = int(os.getenv('PORT', 5000))
-    print(f"🚀 Flask app starting on port {port}")
-    print(f"📡 Health endpoint: http://localhost:{port}/health")
-    print(f"🎯 Start endpoint: http://localhost:{port}/start")
+    print(f"🚀 Flask app starting on port {app_port}")
+    print(f"📡 Health endpoint: http://localhost:{app_port}/health")
+    print(f"🎯 Start endpoint: http://localhost:{app_port}/start")
     
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=app_port, debug=False)
