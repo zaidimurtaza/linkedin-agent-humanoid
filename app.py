@@ -86,7 +86,7 @@ def ping_health_endpoint():
     global app_port
     try:
         port = app_port or int(os.getenv('PORT', 5000))
-        url = f"http://localhost:{port}/health"
+        url = f"https://linkedin-agent-humanoid.onrender.com/health"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             print(f"[{datetime.now()}] 💓 Health ping successful")
@@ -95,13 +95,6 @@ def ping_health_endpoint():
     except Exception as e:
         print(f"[{datetime.now()}] ⚠️ Health ping failed: {str(e)}")
 
-def health_check():
-    """Health check endpoint"""
-    request = requests.get("https://linkedin-agent-humanoid.onrender.com/health")
-    if request.status_code == 200:
-        return "Healthy"
-    else:
-        return "Unhealthy"
 def start_scheduler():
     """Start the background scheduler"""
     global app_port
@@ -122,13 +115,6 @@ def start_scheduler():
         trigger=IntervalTrigger(minutes=1),
         id='health_ping',
         name='Health Endpoint Ping',
-        replace_existing=True
-    )
-    scheduler.add_job(
-        func=health_check,
-        trigger=IntervalTrigger(minutes=1),
-        id='health_check',
-        name='Health Check',
         replace_existing=True
     )
     scheduler.start()
