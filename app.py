@@ -21,6 +21,7 @@ scheduler = BackgroundScheduler()
 workflow_running = False
 workflow_lock = threading.Lock()
 app_port = None
+scheduler_started = False
 
 def execute_workflow():
     """Execute the LinkedIn workflow"""
@@ -97,7 +98,14 @@ def ping_health_endpoint():
 
 def start_scheduler():
     """Start the background scheduler"""
-    global app_port
+    global app_port, scheduler_started
+    
+    # Prevent multiple scheduler starts
+    if scheduler_started or scheduler.running:
+        return
+    
+    # Get port and store globally for health ping
+    app_port = int(os.getenv('PORT', 5000))
     
     # Schedule workflow to run 4 times a day (every 6 hours)
     # Times: 00:00, 06:00, 12:00, 18:00
@@ -118,18 +126,19 @@ def start_scheduler():
         replace_existing=True
     )
     scheduler.start()
+    scheduler_started = True
     print("✅ Scheduler started:")
     print("   - Workflow will run 4 times daily at 00:00, 06:00, 12:00, 18:00")
     print("   - Health endpoint ping every minute to keep server awake")
+
+# Initialize scheduler when module is imported (works with gunicorn)
+start_scheduler()
 
 if __name__ == '__main__':
     # Get port and store globally for health ping
     app_port = int(os.getenv('PORT', 5000))
     
-    # Start scheduler
-    start_scheduler()
-    
-    # Run Flask app
+    # Run Flask app (scheduler already started above)
     print(f"🚀 Flask app starting on port {app_port}")
     print(f"📡 Health endpoint: http://localhost:{app_port}/health")
     print(f"🎯 Start endpoint: http://localhost:{app_port}/start")
